@@ -2,12 +2,11 @@ from collections.abc import Sequence
 class CoreFinder:    
     def __init__(
             self,
-            n: Sequence | int = None,
-            v: dict = None,
+            n: Sequence | int,
+            v: dict,
             precision: int = 10,
             eps: int = 10
             ):
-        
         self._add_n(n)
         self._add_v(v)
         self.precision = precision    # порядок округления результата (число знаков после запятой)
@@ -19,8 +18,6 @@ class CoreFinder:
         self.imputation = None
 
     def _add_n(self, n):
-        if n is None:
-            raise ValueError("Множество игроков не задано")
         
         if isinstance(n, int):
              n = [i for i in range(1, n + 1)]
@@ -29,8 +26,6 @@ class CoreFinder:
         self.players = {n[i]: i for i in range(self.n)}
 
     def _add_v(self, v: dict):
-        if v is None:
-            raise ValueError("Функция выигрыша не задана")
         
         assert isinstance(v, dict), "Функция выигрыша должна быть словарем"
 
@@ -159,17 +154,7 @@ class CoreFinder:
         self.x = x
 
 
-class CoreFinderOpt(CoreFinder):    
-    def __init__(
-            self,
-            n: Sequence | int = None,
-            v: dict = None,
-            precision: int = 10,
-            eps: int = 10
-            ):
-        
-        super().__init__(n, v, precision, eps)
-
+class CoreFinderOpt(CoreFinder):
     def _grand_coalition_x(self):
         # локальные переменные
         n = self.n
@@ -359,13 +344,12 @@ class CoreFinderOpt(CoreFinder):
 class CoreFinderAlt(CoreFinder):    
     def __init__(
             self,
-            n: Sequence | int = None,
-            v: dict = None,
+            n: Sequence | int,
+            v: dict,
             early_stop: bool = True,
             precision: int = 10,
             eps: int = 10
             ):
-        
         self.early_stop = early_stop
         super().__init__(n, v, precision, eps)
 
