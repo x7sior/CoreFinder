@@ -77,8 +77,8 @@ class CoreFinder:
         
         self._add_n(n)
         self._add_v(v)
-        self.precision = precision    # порядок округления результата (число знаков после запятой)
-        self.eps = 10 ** (-eps)       # погрешность при сравнения
+        self.precision = precision
+        self.eps = 10 ** (-eps)
         self._run()
         self.x = {i: round(self.x[i], self.precision) for i in range(self.n)}
         self.x_N = sum(self.x.values())
@@ -196,7 +196,7 @@ class CoreFinder:
             case _:
                 raise ValueError("Недопустимое значение параметра 'check'")
 
-        # посчитаем суммы игроков
+        # вычислим суммы игроков
         sum_x = [0] * (1 << self.n)
 
         for coalition in range(1, 1 << self.n):
@@ -279,24 +279,27 @@ class CoreFinderOpt(CoreFinder):
         vk = self.v[k]
 
         # сохраняем неотрицательные выигрыши одиночных коалиций
-        v1 = {i: max(self.v[1][i], 0) for i in self.v[1]} # сохраняем выигрыши одиночных коалиций
+        v1 = {
+            i: max(self.v[1][i], 0)
+              for i in self.v[1]} 
 
         # урезаем выигрыши коалиций на значения одиночных
         sum_single_coalitions = sum([v1[1 << i] for i in range(n)]) # сумма выигрышей одиночных коалиций
         coalitions = [
             max(vk[main_coalition ^ (1 << i)] - sum_single_coalitions + v1[1 << i], 0) 
-            for i in range(n)
-            ] # список значений урезанных предграндовых коалиций
+            for i in range(n)] # список значений урезанных предграндовых коалиций
         
-        # вычсиляем предрешение
+        # вычисляем предрешение
         term = sum(coalitions) / k # общий член в формуле
-
-        for i in range(n):
-            x[i] = max(term - coalitions[i], 0) + v1[1 << i] # добавляем собственный выигрыш, что ранее был отнят у коалиций
+        x = [
+            max(term - coalitions[i], 0) + v1[1 << i] # к полученному значению возвращаем собственный выигрыш игрока
+            for i in range(n)]
         
         # считаем суммы игроков
         ful_sum_x = sum(x[i] for i in range(n)) # сумма всех игроков
-        sum_x = {(1 << i) ^ main_coalition: ful_sum_x - x[i] for i in range(n)} # сохраняем суммы игроков для коалиций размера n-1
+        sum_x = {
+            (1 << i) ^ main_coalition: ful_sum_x - x[i]
+            for i in range(n)} # сохраняем суммы игроков для коалиций размера n-1
         
         # сохраняем результаты
         self.x = x
@@ -306,28 +309,29 @@ class CoreFinderOpt(CoreFinder):
         self._grand_coalition_x()
         get_players = self._get_players
         
-        # функция для поиска "недовольных" коалиций, которые являются подкоалициями фиксированной коалиции
+        # функция для поиска неустойчивых вложенных коалиций
         def exc_subcoalitions(k_plus, exc_coalitions, fixed_coalition, players_keys):
-            coalitions_keys = []    # сохраняем маски вложенных коалиций
-            zero_excess_keys = []   # сохраняем индексы коалиций в списке, у которых эксцессы нулевые
-            coalitions = []
+            coalitions = [] # положительные эксцессы
+            coalitions_keys = [] # маски неустойчивых коалиций
+            zero_excess_keys = [] # индексы игроков, без которых зафиксированная коалиция становится устойчивой
 
             for i in range(k_plus):
-                mask = fixed_coalition ^ (1 << players_keys[i]) # строим маску коалиции без i-го игрока
+                mask = fixed_coalition ^ (1 << players_keys[i]) # маска коалиции без i-го игрока
                 if mask in exc_coalitions:
-                    coalitions += [exc_coalitions[mask]] # сохраняем положительные эксцессы коалиций без i-го игрока
+                    coalitions += [exc_coalitions[mask]]
                     coalitions_keys += [mask]
                 else:
                     zero_excess_keys += [i]
             return coalitions_keys, zero_excess_keys, coalitions
 
-        # функция для поиска основной коалиции, которая может быть построена на основе "недовольных" коалиций
+        # функция для построения фиксируемой коалиции
         def find_main_coalition(k_plus, exc_coalitions, exc_players_keys):
-            most_exc_coalition_mask = max(exc_coalitions, key=exc_coalitions.get)  # маска самой недовольной коалиции
+            most_exc_coalition_mask = max(exc_coalitions, key=exc_coalitions.get) # маска самой недовольной коалиции
+
             for player in exc_players_keys:
-                if most_exc_coalition_mask & (1 << player) == 0: # если игрок не входит в эту коалицию
-                    changed_coalition = most_exc_coalition_mask | (1 << player) # добавляем игрока в эту коалицию
-                    changed_keys = [player] + get_players(most_exc_coalition_mask)
+                if most_exc_coalition_mask & (1 << player) == 0: # если игрок не входит в самую недовольную коалицию
+                    changed_coalition = most_exc_coalition_mask | (1 << player) # добавляем игрока в коалицию
+                    changed_keys = [player] + get_players(most_exc_coalition_mask) # индексы всех игроков из построенной коалиции
                     return (
                         exc_subcoalitions(k_plus, exc_coalitions, changed_coalition, changed_keys)
                         + (changed_keys,)
@@ -337,19 +341,19 @@ class CoreFinderOpt(CoreFinder):
         eps = self.eps
         n = self.n
         x = self.x
-        old_sum_x = self.sum_x  # словарь для хранения старых сумм игроков (коалиций размера k+1)
+        old_sum_x = self.sum_x  # старые суммы игроков (коалиций размера k+1)
         for k in range(n - 2, 1, -1):
             k_plus = k+1
             vk = self.v[k]
-            total_extra_x = {i: 0 for i in range(n)} # словарь для хранения суммы дополнений к предрешению для каждого игрока
+            total_extra_x = {i: 0 for i in range(n)} # добавочная сумма выплат к предрешению каждого игрока
 
-        # считаем суммы и ищем "недовольные" коалиции
-            new_sum_x = dict() # словарь для хранения новых сумм игроков (коалиций размера k)
-            exc_coalitions = dict() # словарь для хранения эксцессов "недовольных" коалиций
-            exc_players = {i: 0 for i in range(n)} # словарь для подсчёта суммы эксцессов всех "недовольных" коалиций, в которые входит игрок
+        # считаем суммы и ищем неустойчивые коалиции
+            new_sum_x = dict() # новые суммы игроков (коалиций размера k)
+            exc_coalitions = dict() # эксцессы неустойчивых коалиций (размера k)
+            exc_players = {i: 0 for i in range(n)} # сумма эксцессов по всем неустойчивым коалициям, в которые входит игрок
 
             for coalition in vk:
-                # ищем коалицию включащую выбранную, чтобы быстрее посчитать её сумму и эксцесс
+                # ищем коалицию включащую выбранную, чтобы вычислить её сумму и эксцесс
                 for i in range(n):
                     bigger_coalition = coalition | (1 << i)
                     if bigger_coalition in old_sum_x:
@@ -357,18 +361,18 @@ class CoreFinderOpt(CoreFinder):
                         break
                 excess = vk[coalition] - new_sum_x[coalition]
 
-                # сохраняем положительные эксцессы для коалиций и входящих в них игроков
+                # сохраняем эксцессы устойчивых коалиций и входящих в них игроков
                 if excess > eps:
                     exc_coalitions[coalition] = excess
                     for player in get_players(coalition):
                         exc_players[player] += excess
 
-        # дополняем предрешение и пересчитываем суммы на основен "недовольных коалиций"
+        # дополняем предрешение и пересчитываем суммы на основе неустойчивых коалиций
             while exc_coalitions:
-                exc_players_keys = sorted(exc_players, key=exc_players.get, reverse=True) # индекcы самых "недовольных" игроков
-                extra_x = {} # словарь для хранения дополнений к предрешению для каждого игрока в текущей итерации
+                exc_players_keys = sorted(exc_players, key=exc_players.get, reverse=True) # индекcы самых неустойчивых игроков
+                extra_x = {} # добавочные выплаты к предрешению для каждого игрока в текущей итерации
 
-                # случай, когда осталасть одна "недовольная" коалиция
+                # случай, когда осталасть одна неустойчивая коалиция
                 if len(exc_coalitions) == 1:
                     exc_coalitions = None
                     term = exc_players[exc_players_keys[0]] / k # общий член в формуле предрешения
@@ -377,25 +381,24 @@ class CoreFinderOpt(CoreFinder):
                         x[player] += term
                         extra_x[player] = term
 
-                # более одной "недовольной" коалиции
+                # более одной неустойчивой коалиции
                 else:
-        # строим маску коалиции по наиболее "недовольным" игрокам и сохраняем эксцессы коалиций, вложенных в неё
+        # строим маску коалиции по наиболее неустойчивым игрокам и сохраняем эксцессы коалиций, вложенных в неё
                     main_coalition = 1 << exc_players_keys[0] # добавляем первого игрока 
-
                     for i in range(1, k_plus):
                         main_coalition |= 1 << exc_players_keys[i] # добавляем всех остальных
 
                     coalitions_keys, zero_excess_keys,coalitions = exc_subcoalitions(
                         k_plus, exc_coalitions, main_coalition, exc_players_keys) # эксцессы вложенных коалиций
 
-        # если коалиций с положительным эксцессом нет, то строим коалицию, которая содержит в себе "недовольные" коалиций
+        # если среди вложенных коалиций нет ни одной неустойчивой, то строим маску коалиции, у которой они точно есть
                     if not coalitions:
                         coalitions_keys, zero_excess_keys, coalitions, exc_players_keys = find_main_coalition(
                             k_plus, exc_coalitions, exc_players_keys)
 
         # считаем дополнение к предрешению
                     term = sum(coalitions) / k  # общий член в формуле
-                    idx = 0    # иднекс коалиций с положительным эксцессом
+                    idx = 0 # индекс текущей коалиции, среди неустойчивых
 
                     for i in range(k_plus):
                         if i in zero_excess_keys:
@@ -413,8 +416,8 @@ class CoreFinderOpt(CoreFinder):
                     for key in coalitions_keys:
                         del exc_coalitions[key]
 
+        # пересчитываем эксцессы оставшихся коалиций и удаляем устойчивые
                     for player in extra_x:
-                        # пересчитываем эксцессы оставшихся коалиций
                         del_excesses = []
 
                         for coalition in exc_coalitions:
@@ -438,17 +441,16 @@ class CoreFinderOpt(CoreFinder):
                         for player in get_players(coalition):
                             exc_players[player] += excess
 
-                # пересчитываем суммы дополнений для игроков
+        # пересчитываем суммы добавочных выплат каждого игрока
                 for player in extra_x:
                     total_extra_x[player] += extra_x[player]
             
-            # пересчитываем суммы игроков
+        # пересчитываем суммы игроков
             for player in total_extra_x:
-                if total_extra_x[player] > eps:
-                    # ищем все коалиции, в которые входит игрок, и добавляем им дополнение к предрешению
-                    for coalition in new_sum_x:
-                        if coalition & (1 << player):
-                            new_sum_x[coalition] += total_extra_x[player]
+                if total_extra_x[player] > eps: # если сумма добавочных выплат игрока больше нуля
+                    for coalition in new_sum_x: # среди всех сумм
+                        if coalition & (1 << player): # находим коалиции, в которые входит игрок
+                            new_sum_x[coalition] += total_extra_x[player] # и добавляем сумму добавочных выплат
             old_sum_x = new_sum_x
 
         # сохраняем результат
@@ -571,7 +573,7 @@ class CoreFinderAlt(CoreFinder):
         # считаем минимальные и максимальные предрешения по эксцессам
                 if len(coalitions):
                     term = sum(coalitions) / k_minus  # общий член в формуле
-                    idx = 0    # иднекс коалиций с положительным эксцессом
+                    idx = 0    # индекс текущей коалиции среди неустойчивых
 
                     for i in range(k):
                         if i in zero_excess_keys:
