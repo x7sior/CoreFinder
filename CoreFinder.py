@@ -1,5 +1,72 @@
 from collections.abc import Sequence
-class CoreFinder:    
+class CoreFinder:
+    """
+    Базовый алгоритм поиска предрешения игры.
+
+    Parameters
+    ----------
+    n : sequence or int
+        Множество игроков. Задаётся последовательностью идентификаторов либо целым числом — тогда игроки нумеруются от 1 до n.
+    v : dict
+        Характеристическая функция {последовательность из идентификаторов коалиции: выигрыш}.
+    precision : int, optional
+        Число знаков после запятой при выводе результата. По умолчанию 10.
+    eps : int, optional
+        Погрешность при сравнении. Применяется как 1e-eps. По умолчанию 10.
+
+    Attributes
+    ----------
+    x : dict
+        Предрешение игры {номер игрока от 0 до n-1: выигрыш}
+    x_N : float
+        Сумма компонент предрешения игры.
+    delta_v : float
+        Сумма дополнительных выплат.
+        
+    Methods
+    -------
+    get_x()
+        Возвращает вычисленное предрешение игры в виде словаря {идентификатор игрока: выигрыш}.
+    get_imputation(extra_imputation_form=None)
+        Вычисляет решение игры.
+    check_excess(check="imputation", get_excess: bool=False, print_excesses: bool=False)
+        Проверяет устойчивость относительно коалиций.
+
+    Examples
+    --------
+    >>> cf = CoreFinder(['0', '1', '2'], {'0': 0, '1': 0, '2': 0, '01': 10, '02': 20, '12': 30, '012': 50})
+    >>> cf = CoreFinder('123', {'1': 0, '2': 0, '3': 0, '12': 10, '13': 20, '23': 30, '123': 50})
+    >>> cf = CoreFinder(3, {frozenset([1]): 0, frozenset([2]): 0, frozenset([3]): 0, frozenset([1, 2]): 10, frozenset([1, 3]): 20, frozenset([2, 3]): 30, frozenset([1, 2, 3]): 50})
+    >>> cf.get_x()
+    {'1': 0.0, '2': 10.0, '3': 20.0}
+    >>> cf.x_N
+    30.0
+    >>> cf.get_imputation()
+    {'1': 6.6666666667, '2': 16.6666666667, '3': 26.6666666667}
+    >>> cf.get_imputation([0.2, 0.3, 0.5])
+    {'1': 4.0, '2': 16.0, '3': 30.0}
+    >>> cf.check_excess()
+    {'in_core': True,
+    'excess': {1: -4.0, 2: -16.0, 4: -30.0, 3: -10.0, 5: -14.0, 6: -16.0}}
+    >>> cf.check_excess(get_excess=True)
+        {'in_core': True,
+    'excess': {frozenset({'1'}): -4.0,
+    frozenset({'2'}): -16.0,
+    frozenset({'3'}): -30.0,
+    frozenset({'1', '2'}): -10.0,
+    frozenset({'1', '3'}): -14.0,
+    frozenset({'2', '3'}): -16.0}}
+
+    Raises
+    ------
+    AssertionError
+        Если `v` не является словарём.
+    ValueError
+        Если `v` задана не для всех коалиций.
+    KeyError
+        Если коалиция в `v` содержит игрока, отсутствующего в `n`.
+    """
+    
     def __init__(
             self,
             n: Sequence | int,
@@ -7,6 +74,7 @@ class CoreFinder:
             precision: int = 10,
             eps: int = 10
             ):
+        
         self._add_n(n)
         self._add_v(v)
         self.precision = precision    # порядок округления результата (число знаков после запятой)
@@ -43,18 +111,36 @@ class CoreFinder:
             raise KeyError(f"Игрок {e} отсутствует в множестве игроков")
 
     def get_x(self):
+        """
+        Предрешение игры.
+
+        Returns
+        -------
+        dict
+            {идентификатор игрока: выигрыш}.
+        """
         return {i: self.x[self.players[i]] for i in self.players}
 
-    @staticmethod
-    def _get_players(mask):
-        players = []
-        while mask:
-            lsb = mask & -mask
-            players += [lsb.bit_length() - 1]
-            mask ^= lsb
-        return players
-
     def get_imputation(self, extra_imputation_form: Sequence = None):
+        """
+        Вычисляет решение.
+        
+        Parameters
+        ----------
+        extra_imputation_form : sequence, optional
+            Определяет пропорции распределения дополнительных выплат в порядке нумерации игроков. По умолчанию равномерное распределение.
+
+        Returns
+        -------
+        dict
+            Вычисленное решение игры {идентификатор игрока: выигрыш}.
+
+        Notes
+        -----
+        Если задан `extra_imputation_form` или `imputation` is None,
+        пересчитывает и задаёт атрибут `imputation` как {номер игрока: выигрыш},
+        где номер — позиция игрока от 0 до n-1.
+        """
         if extra_imputation_form or (self.imputation is None):
             if extra_imputation_form is None:
                 extra_imputation_form = [1/self.n] * self.n
@@ -67,19 +153,32 @@ class CoreFinder:
         return {i: self.imputation[self.players[i]] for i in self.players}
 
     def check_excess(self,
-                     check = "imputation",
+                     check = 'imputation',
                      get_excess: bool = False,
                      print_excesses: bool = False) -> dict:
         """
-        Проверяет условия v(S) <= sum(x[i] for i in S) для всех коалиций S, и возвращает словарь с результатами проверки и эксцессами.
+        Проверяет устойчивость относительно всех коалиций, кроме максимальной.
 
-        Параметры
-        ---------
-        check          : "imputation" | "x"  | Sequence -- задать проверяемое распределение (по умолчанию "imputation")
-        get_excess     : возвращать ли эксцессы с коалициями в виде множеств(False по умолчанию)
-        print_excesses : вывести ли эксцессы на экран (False по умолчанию)
+        Parameters
+        ----------
+        check : {'imputation', 'x'} or sequence, optional
+            Задаёт проверяемое распределение. По умолчанию 'imputation'.
+        get_excess : bool, optional
+            Если True, коалиции в 'excess' возвращаются как frozenset идентификаторов, иначе как битмаски. По умолчанию False.
+        print_excesses : bool, optional
+            Вывести ли эксцессы на экран. По умолчанию False.
 
-        Возвращает dict: "in_core", "excess" (по умолчанию словарь эксцессов с коалициями в виде битовых масок, если get_excess=False, и в виде множеств игроков, если get_excess=True)
+        Returns
+        -------
+        dict
+            Словарь с ключами:
+            - 'in_core' : bool — сохраняется ли устойчивость на всех коалициях.
+            - 'excess' : dict — {коалиция: эксцесс}.
+
+        Raises
+        ------
+        ValueError
+            Если `check` принимает недопустимое значение или его длина не равна количеству игроков.
         """
         match check:
             case "imputation":
@@ -134,6 +233,15 @@ class CoreFinder:
             
         return {"in_core": in_core, "excess": excess}
 
+    @staticmethod
+    def _get_players(mask):
+        players = []
+        while mask:
+            lsb = mask & -mask
+            players += [lsb.bit_length() - 1]
+            mask ^= lsb
+        return players
+
     def _run(self):
         get_players = self._get_players
         x = {i: self.v[1][1 << i] for i in range(self.n)}
@@ -155,6 +263,13 @@ class CoreFinder:
 
 
 class CoreFinderOpt(CoreFinder):
+    """
+    Оптимизированный алгоритм поиска предрешения.
+
+    See Also
+    --------
+    CoreFinder : Базовый класс, содержит описание параметров и методов.
+    """
     def _grand_coalition_x(self):
         # локальные переменные
         n = self.n
@@ -342,6 +457,18 @@ class CoreFinderOpt(CoreFinder):
 
 
 class CoreFinderAlt(CoreFinder):    
+    """
+    Альтернативный алгоритм поиска предрешения.
+
+    Parameters
+    ----------
+    early_stop : bool, optional
+        Если True, останавливает вычисление при попадании решения в C-ядро. По умолчанию True.
+
+    See Also
+    --------
+    CoreFinder : Базовый класс, содержит описание параметров и методов.
+    """
     def __init__(
             self,
             n: Sequence | int,
