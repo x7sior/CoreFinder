@@ -1,3 +1,6 @@
+"""
+Алгоритмы построения решения из C-ядра для кооперативной игры.
+"""
 from collections.abc import Sequence
 class CoreFinder:
     """
